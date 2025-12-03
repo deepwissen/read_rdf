@@ -73,8 +73,7 @@ static unique_ptr<FunctionData> RDFReaderBind(ClientContext &context, TableFunct
 	return std::move(result);
 }
 
-static unique_ptr<GlobalTableFunctionState> RDFReaderGlobalInit(ClientContext &context,
-                                                                 TableFunctionInitInput &input) {
+static unique_ptr<GlobalTableFunctionState> RDFReaderGlobalInit(ClientContext &context, TableFunctionInitInput &input) {
 	return make_uniq<RDFReaderGlobalState>();
 }
 // Helper to get next file from global state
@@ -88,7 +87,8 @@ static bool TryGetNextFile(RDFReaderGlobalState &gstate, const RDFReaderBindData
 }
 
 // Helper to open a file and start parsing
-static bool OpenNextFile(RDFReaderLocalState &lstate, RDFReaderGlobalState &gstate, const RDFReaderBindData &bind_data) {
+static bool OpenNextFile(RDFReaderLocalState &lstate, RDFReaderGlobalState &gstate,
+                         const RDFReaderBindData &bind_data) {
 	string file_path;
 	if (!TryGetNextFile(gstate, bind_data, file_path)) {
 		lstate.finished = true;
