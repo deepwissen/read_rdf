@@ -1,0 +1,3 @@
+@base <http://filebase.org/> .
+@prefix ex: <http://example.org/> .
+<item> ex:p <value> .

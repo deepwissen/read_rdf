@@ -1,0 +1,2 @@
+@prefix ex: <http://example.org/> .
+<http://example.org/nested> ex:p <http://example.org/value> .

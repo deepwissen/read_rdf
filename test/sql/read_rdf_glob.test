@@ -1,0 +1,104 @@
+# name: test/sql/read_rdf_glob.test
+# description: Test file globbing for read_rdf
+# group: [sql]
+
+require read_rdf
+
+# TC-01: Single file (backward compatibility)
+# Validates: - Single file path still works
+#            - filename column shows basename
+query II
+SELECT filename, subject FROM read_rdf('test/rdf/glob_test/file1.ttl')
+----
+file1.ttl	http://example.org/s1
+
+# TC-02: Glob pattern matching multiple .ttl files
+# Validates: - Wildcard glob expands to multiple files
+#            - Returns rows from all matched files
+#            - filename column shows correct source
+query II rowsort
+SELECT filename, subject FROM read_rdf('test/rdf/glob_test/*.ttl')
+WHERE subject LIKE '%/s%'
+----
+file1.ttl	http://example.org/s1
+file2.ttl	http://example.org/s2
+
+# TC-03: Glob with no matches throws IO error
+# Validates: - Error thrown for zero matches (DuckDB behavior)
+statement error
+SELECT COUNT(*) FROM read_rdf('test/rdf/glob_test/*.xyz')
+----
+IO Error: No files found that match the pattern
+
+# TC-04: Recursive glob pattern (**)
+# Validates: - Double star matches subdirectories
+#            - Files in nested dirs are found
+query II rowsort
+SELECT filename, subject FROM read_rdf('test/rdf/glob_test/**/*.ttl')
+WHERE subject LIKE '%nested%' OR subject LIKE '%/s1'
+----
+file1.ttl	http://example.org/s1
+nested.ttl	http://example.org/nested
+
+# TC-05: Glob with base_uri parameter
+# Validates: - base_uri works with glob patterns
+#            - base_uri applies to all files
+query II
+SELECT filename, subject FROM read_rdf('test/rdf/no_base.ttl', base_uri := 'http://glob.test/')
+WHERE subject LIKE '%/s'
+----
+no_base.ttl	http://glob.test/s
+
+# TC-06: Glob matching different formats
+# Validates: - Can match .ttl and .nt files separately
+query II
+SELECT filename, subject FROM read_rdf('test/rdf/glob_test/*.nt')
+----
+file3.nt	http://example.org/s3
+
+# TC-07: Verify all columns present with filename first
+# Validates: - filename is first column
+#            - All 7 columns returned
+query IIIIIII
+SELECT * FROM read_rdf('test/rdf/glob_test/file1.ttl')
+----
+file1.ttl	(empty)	http://example.org/s1	ex:p	http://example.org/o1	(empty)	(empty)
+
+# TC-08: Count rows from multiple files
+# Validates: - Correct total count across files
+# Note: file1(1) + file2(1) + empty(0) + has_base(1) + no_base_rel(1) = 4
+query I
+SELECT COUNT(*) FROM read_rdf('test/rdf/glob_test/*.ttl')
+----
+4
+
+# TC-09: Empty file handling (should produce warning but continue)
+# Validates: - Empty files don't cause errors
+#            - Other files still processed
+query I
+SELECT COUNT(*) FROM read_rdf('test/rdf/glob_test/empty.ttl')
+----
+0
+
+# TC-10: Glob + base_uri with mixed @base presence
+# Validates: - User base_uri applies to files WITHOUT @base
+#            - File @base overrides user base_uri (per W3C spec)
+# has_base.ttl has @base <http://filebase.org/> → uses file's base
+# no_base_rel.ttl has no @base → uses user's base_uri
+query II rowsort
+SELECT filename, subject FROM read_rdf('test/rdf/glob_test/*_base*.ttl', base_uri := 'http://user.org/')
+WHERE subject LIKE '%/item'
+----
+has_base.ttl	http://filebase.org/item
+no_base_rel.ttl	http://user.org/item
+
+# TC-11: Verify no state leakage between files
+# Validates: - Each file gets independent base URI resolution
+#            - File1's @base doesn't affect File2
+query II rowsort
+SELECT filename, subject FROM read_rdf('test/rdf/glob_test/*_base*.ttl')
+WHERE subject LIKE '%item%'
+----
+has_base.ttl	http://filebase.org/item
+no_base_rel.ttl	item
+
