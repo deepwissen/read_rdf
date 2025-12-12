@@ -9,6 +9,7 @@
 #include <duckdb/parser/parsed_data/create_table_function_info.hpp>
 #include "duckdb/common/file_system.hpp"
 #include <mutex>
+#include <algorithm>
 
 using namespace std;
 
@@ -35,6 +36,12 @@ struct RDFReaderLocalState : public LocalTableFunctionState {
 	bool finished = false;
 };
 
+// Helper to normalize path separators (Windows backslash to forward slash)
+static string NormalizePath(const string &path) {
+	string result = path;
+	std::replace(result.begin(), result.end(), '\\', '/');
+	return result;
+}
 
 static unique_ptr<FunctionData> RDFReaderBind(ClientContext &context, TableFunctionBindInput &input,
                                               vector<LogicalType> &return_types, vector<string> &names) {
@@ -101,7 +108,7 @@ static bool OpenNextFile(RDFReaderLocalState &lstate, RDFReaderGlobalState &gsta
 		return false;
 	}
 
-	lstate.current_file = file_path; // Store full path (consistent with DuckDB)
+	lstate.current_file = NormalizePath(file_path); // Normalize path separators for cross-platform consistency
 	auto sb = make_uniq<SerdBuffer>(file_path, bind_data.baseURI);
 	sb->StartParse();
 	lstate.sb = std::move(sb);
