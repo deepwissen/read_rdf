@@ -6,22 +6,21 @@ require read_rdf
 
 # TC-01: Single file (backward compatibility)
 # Validates: - Single file path still works
-#            - filename column shows basename
-query II
-SELECT filename, subject FROM read_rdf('test/rdf/glob_test/file1.ttl')
+#            - Default schema has 6 columns (no filename)
+query I
+SELECT subject FROM read_rdf('test/rdf/glob_test/file1.ttl')
 ----
-file1.ttl	http://example.org/s1
+http://example.org/s1
 
 # TC-02: Glob pattern matching multiple .ttl files
 # Validates: - Wildcard glob expands to multiple files
 #            - Returns rows from all matched files
-#            - filename column shows correct source
-query II rowsort
-SELECT filename, subject FROM read_rdf('test/rdf/glob_test/*.ttl')
+query I rowsort
+SELECT subject FROM read_rdf('test/rdf/glob_test/*.ttl')
 WHERE subject LIKE '%/s%'
 ----
-file1.ttl	http://example.org/s1
-file2.ttl	http://example.org/s2
+http://example.org/s1
+http://example.org/s2
 
 # TC-03: Glob with no matches throws IO error
 # Validates: - Error thrown for zero matches (DuckDB behavior)
@@ -33,36 +32,36 @@ IO Error: No files found that match the pattern
 # TC-04: Recursive glob pattern (**)
 # Validates: - Double star matches subdirectories
 #            - Files in nested dirs are found
-query II rowsort
-SELECT filename, subject FROM read_rdf('test/rdf/glob_test/**/*.ttl')
+query I rowsort
+SELECT subject FROM read_rdf('test/rdf/glob_test/**/*.ttl')
 WHERE subject LIKE '%nested%' OR subject LIKE '%/s1'
 ----
-file1.ttl	http://example.org/s1
-nested.ttl	http://example.org/nested
+http://example.org/nested
+http://example.org/s1
 
 # TC-05: Glob with base_uri parameter
 # Validates: - base_uri works with glob patterns
 #            - base_uri applies to all files
-query II
-SELECT filename, subject FROM read_rdf('test/rdf/no_base.ttl', base_uri := 'http://glob.test/')
+query I
+SELECT subject FROM read_rdf('test/rdf/no_base.ttl', base_uri := 'http://glob.test/')
 WHERE subject LIKE '%/s'
 ----
-no_base.ttl	http://glob.test/s
+http://glob.test/s
 
 # TC-06: Glob matching different formats
 # Validates: - Can match .ttl and .nt files separately
-query II
-SELECT filename, subject FROM read_rdf('test/rdf/glob_test/*.nt')
+query I
+SELECT subject FROM read_rdf('test/rdf/glob_test/*.nt')
 ----
-file3.nt	http://example.org/s3
+http://example.org/s3
 
-# TC-07: Verify all columns present with filename first
-# Validates: - filename is first column
-#            - All 7 columns returned
-query IIIIIII
+# TC-07: Verify default schema (6 columns, no filename)
+# Validates: - Default has 6 columns
+#            - Consistent with DuckDB (filename is optional)
+query IIIIII
 SELECT * FROM read_rdf('test/rdf/glob_test/file1.ttl')
 ----
-file1.ttl	(empty)	http://example.org/s1	ex:p	http://example.org/o1	(empty)	(empty)
+(empty)	http://example.org/s1	ex:p	http://example.org/o1	(empty)	(empty)
 
 # TC-08: Count rows from multiple files
 # Validates: - Correct total count across files
@@ -85,20 +84,45 @@ SELECT COUNT(*) FROM read_rdf('test/rdf/glob_test/empty.ttl')
 #            - File @base overrides user base_uri (per W3C spec)
 # has_base.ttl has @base <http://filebase.org/> → uses file's base
 # no_base_rel.ttl has no @base → uses user's base_uri
-query II rowsort
-SELECT filename, subject FROM read_rdf('test/rdf/glob_test/*_base*.ttl', base_uri := 'http://user.org/')
+query I rowsort
+SELECT subject FROM read_rdf('test/rdf/glob_test/*_base*.ttl', base_uri := 'http://user.org/')
 WHERE subject LIKE '%/item'
 ----
-has_base.ttl	http://filebase.org/item
-no_base_rel.ttl	http://user.org/item
+http://filebase.org/item
+http://user.org/item
 
 # TC-11: Verify no state leakage between files
 # Validates: - Each file gets independent base URI resolution
 #            - File1's @base doesn't affect File2
-query II rowsort
-SELECT filename, subject FROM read_rdf('test/rdf/glob_test/*_base*.ttl')
+query I rowsort
+SELECT subject FROM read_rdf('test/rdf/glob_test/*_base*.ttl')
 WHERE subject LIKE '%item%'
 ----
-has_base.ttl	http://filebase.org/item
-no_base_rel.ttl	item
+http://filebase.org/item
+item
 
+# TC-12: Optional filename parameter (like DuckDB's read_csv)
+# Validates: - filename := true adds filename as last column
+#            - Shows full path (consistent with DuckDB)
+query II
+SELECT subject, filename FROM read_rdf('test/rdf/glob_test/file1.ttl', filename := true)
+----
+http://example.org/s1	test/rdf/glob_test/file1.ttl
+
+# TC-13: Filename with glob pattern
+# Validates: - filename works with glob patterns
+#            - Each row shows correct source file
+query II rowsort
+SELECT subject, filename FROM read_rdf('test/rdf/glob_test/*.ttl', filename := true)
+WHERE subject LIKE '%/s%'
+----
+http://example.org/s1	test/rdf/glob_test/file1.ttl
+http://example.org/s2	test/rdf/glob_test/file2.ttl
+
+# TC-14: Schema with filename := true (7 columns)
+# Validates: - filename is last column when enabled
+#            - All 7 columns returned
+query IIIIIII
+SELECT * FROM read_rdf('test/rdf/glob_test/file1.ttl', filename := true)
+----
+(empty)	http://example.org/s1	ex:p	http://example.org/o1	(empty)	(empty)	test/rdf/glob_test/file1.ttl

@@ -17,6 +17,7 @@ namespace duckdb {
 struct RDFReaderBindData : public TableFunctionData {
 	vector<string> files;
 	string baseURI;
+	bool include_filename = false;
 };
 
 struct RDFReaderGlobalState : public GlobalTableFunctionState {
@@ -34,14 +35,6 @@ struct RDFReaderLocalState : public LocalTableFunctionState {
 	bool finished = false;
 };
 
-// Helper to extract basename from path
-static string GetBasename(const string &path) {
-	auto pos = path.find_last_of("/\\");
-	if (pos == string::npos) {
-		return path;
-	}
-	return path.substr(pos + 1);
-}
 
 static unique_ptr<FunctionData> RDFReaderBind(ClientContext &context, TableFunctionBindInput &input,
                                               vector<LogicalType> &return_types, vector<string> &names) {
@@ -52,6 +45,12 @@ static unique_ptr<FunctionData> RDFReaderBind(ClientContext &context, TableFunct
 	auto base_uri_param = input.named_parameters.find("base_uri");
 	if (base_uri_param != input.named_parameters.end() && !base_uri_param->second.IsNull()) {
 		result->baseURI = base_uri_param->second.GetValue<string>();
+	}
+
+	// Handle optional filename parameter (like DuckDB's read_csv)
+	auto filename_param = input.named_parameters.find("filename");
+	if (filename_param != input.named_parameters.end() && !filename_param->second.IsNull()) {
+		result->include_filename = filename_param->second.GetValue<bool>();
 	}
 
 	// Expand glob pattern to get list of files
@@ -66,10 +65,17 @@ static unique_ptr<FunctionData> RDFReaderBind(ClientContext &context, TableFunct
 	// Sort files for deterministic ordering
 	std::sort(result->files.begin(), result->files.end());
 
-	// Output schema: filename first, then RDF columns
-	names = {"filename", "graph", "subject", "predicate", "object", "object_datatype", "object_lang"};
-	return_types = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR,
+	// Output schema: RDF columns, with optional filename as last column (like DuckDB's read_csv)
+	names = {"graph", "subject", "predicate", "object", "object_datatype", "object_lang"};
+	return_types = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR,
 	                LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR};
+
+	// Add filename as last column if requested (consistent with DuckDB)
+	if (result->include_filename) {
+		names.push_back("filename");
+		return_types.push_back(LogicalType::VARCHAR);
+	}
+
 	return std::move(result);
 }
 
@@ -95,7 +101,7 @@ static bool OpenNextFile(RDFReaderLocalState &lstate, RDFReaderGlobalState &gsta
 		return false;
 	}
 
-	lstate.current_file = GetBasename(file_path);
+	lstate.current_file = file_path; // Store full path (consistent with DuckDB)
 	auto sb = make_uniq<SerdBuffer>(file_path, bind_data.baseURI);
 	sb->StartParse();
 	lstate.sb = std::move(sb);
@@ -149,18 +155,20 @@ static void RDFReaderFunc(ClientContext &context, TableFunctionInput &input, Dat
 			}
 
 			RDFRow row = lstate.sb->GetNextRow();
-			// Column 0: filename (basename)
-			output.SetValue(0, count, Value(lstate.current_file));
-			// Columns 1-6: RDF data
-			output.SetValue(1, count, Value(row.graph));
-			output.SetValue(2, count, Value(row.subject));
-			output.SetValue(3, count, Value(row.predicate));
-			output.SetValue(4, count, Value(row.object));
-			output.SetValue(5, count, Value(row.datatype));
-			output.SetValue(6, count, Value(row.lang));
+			// Columns 0-5: RDF data
+			output.SetValue(0, count, Value(row.graph));
+			output.SetValue(1, count, Value(row.subject));
+			output.SetValue(2, count, Value(row.predicate));
+			output.SetValue(3, count, Value(row.object));
+			output.SetValue(4, count, Value(row.datatype));
+			output.SetValue(5, count, Value(row.lang));
+			// Column 6 (optional): filename as last column (like DuckDB's read_csv)
+			if (bind_data.include_filename) {
+				output.SetValue(6, count, Value(lstate.current_file));
+			}
 			count++;
 		} catch (const std::runtime_error &error) {
-			throw SyntaxException(error.what());
+			throw SyntaxException("Error in file '%s': %s", lstate.current_file.c_str(), error.what());
 		}
 	}
 	output.SetCardinality(count);
@@ -170,8 +178,9 @@ static void LoadInternal(ExtensionLoader &loader) {
 	string extension_name = "read_rdf";
 	TableFunction tf(extension_name, {LogicalType::VARCHAR}, RDFReaderFunc, RDFReaderBind, RDFReaderGlobalInit,
 	                 RDFReaderInit);
-	// Register optional named parameter for base URI
+	// Register optional named parameters
 	tf.named_parameters["base_uri"] = LogicalType::VARCHAR;
+	tf.named_parameters["filename"] = LogicalType::BOOLEAN;
 	loader.RegisterFunction(tf);
 }
 
