@@ -5,20 +5,21 @@ cmake_minimum_required(VERSION 3.10)
 # ------------------------------------------------------------
 set(TARGET_NAME read_rdf)
 
-project(${TARGET_NAME} LANGUAGES C CXX)
+# Find serd via pkg-config (installed by vcpkg)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SERD REQUIRED IMPORTED_TARGET serd-0)
 
 set(EXTENSION_NAME         ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
+
+project(${TARGET_NAME} LANGUAGES C CXX)
+
+include_directories(src/include)
 
 set(EXTENSION_SOURCES
     src/read_rdf_extension.cpp
     src/serd_buffer.cpp
 )
-
-# ------------------------------------------------------------
-# SERD — via vcpkg
-# ------------------------------------------------------------
-find_package(serd CONFIG REQUIRED)
 
 # ------------------------------------------------------------
 # DuckDB extension: static + loadable
@@ -34,26 +35,19 @@ build_loadable_extension(
     ${EXTENSION_SOURCES}
 )
 
-# Add target-local include paths
-target_include_directories(${EXTENSION_NAME}
-    PRIVATE
-        src/include
-)
-target_include_directories(${LOADABLE_EXTENSION_NAME}
-    PRIVATE
-        src/include
-)
+# Link SERD via pkg-config
+target_link_libraries(${EXTENSION_NAME} PkgConfig::SERD)
+target_include_directories(${EXTENSION_NAME} PRIVATE ${SERD_INCLUDE_DIRS})
 
-# Link SERD from vcpkg
-target_link_libraries(${EXTENSION_NAME}
-    PRIVATE
-        serd::serd
-)
+target_link_libraries(${LOADABLE_EXTENSION_NAME} PkgConfig::SERD)
+target_include_directories(${LOADABLE_EXTENSION_NAME} PRIVATE ${SERD_INCLUDE_DIRS})
 
-target_link_libraries(${LOADABLE_EXTENSION_NAME}
-    PRIVATE
-        serd::serd
-)
+# On Windows, serd is built as a static library via vcpkg, but the headers default to
+# dllimport. Define SERD_STATIC to use static linking and avoid LNK2019/LNK1120 errors.
+if(WIN32)
+    target_compile_definitions(${EXTENSION_NAME} PRIVATE SERD_STATIC)
+    target_compile_definitions(${LOADABLE_EXTENSION_NAME} PRIVATE SERD_STATIC)
+endif()
 
 install(
     TARGETS ${EXTENSION_NAME}
