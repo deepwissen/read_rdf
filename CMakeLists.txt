@@ -4,7 +4,6 @@ cmake_minimum_required(VERSION 3.10)
 # Project setup
 # ------------------------------------------------------------
 set(TARGET_NAME read_rdf)
-set(SERD_NAME serd_lib)
 
 project(${TARGET_NAME} LANGUAGES C CXX)
 
@@ -17,25 +16,9 @@ set(EXTENSION_SOURCES
 )
 
 # ------------------------------------------------------------
-# SERD — internal static library
+# SERD — via vcpkg
 # ------------------------------------------------------------
-add_library(${SERD_NAME} STATIC
-    serd/src/base64.c
-    serd/src/byte_source.c
-    serd/src/env.c
-    serd/src/n3.c
-    serd/src/node.c
-    serd/src/reader.c
-    serd/src/string.c
-    serd/src/system.c
-    serd/src/uri.c
-    serd/src/writer.c
-)
-
-target_include_directories(${SERD_NAME}
-    PRIVATE
-        serd/include
-)
+find_package(serd CONFIG REQUIRED)
 
 # ------------------------------------------------------------
 # DuckDB extension: static + loadable
@@ -55,37 +38,25 @@ build_loadable_extension(
 target_include_directories(${EXTENSION_NAME}
     PRIVATE
         src/include
-        serd/include
 )
 target_include_directories(${LOADABLE_EXTENSION_NAME}
     PRIVATE
         src/include
-        serd/include
 )
 
-# Link SERD internally (no leakage, no exports)
+# Link SERD from vcpkg
 target_link_libraries(${EXTENSION_NAME}
-        ${SERD_NAME}
+    PRIVATE
+        serd::serd
 )
 
 target_link_libraries(${LOADABLE_EXTENSION_NAME}
-        ${SERD_NAME}
+    PRIVATE
+        serd::serd
 )
 
-# Windows: force static SERD behavior (avoid dllimport)
-if (WIN32)
-    target_compile_definitions(${SERD_NAME} PRIVATE SERD_STATIC)
-    target_compile_definitions(${EXTENSION_NAME} PRIVATE SERD_STATIC)
-    target_compile_definitions(${LOADABLE_EXTENSION_NAME} PRIVATE SERD_STATIC)
-endif()
-
 install(
-    TARGETS ${SERD_NAME}
-    EXPORT "${DUCKDB_EXPORT_SET}"
-    ARCHIVE DESTINATION "${INSTALL_LIB_DIR}"  # .a file on Unix, .lib on Windows
-)
-install(
-    TARGETS ${EXTENSION_NAME} 
+    TARGETS ${EXTENSION_NAME}
     EXPORT  "${DUCKDB_EXPORT_SET}"
     LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
     ARCHIVE DESTINATION "${INSTALL_LIB_DIR}"
