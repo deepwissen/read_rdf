@@ -28,6 +28,7 @@ jobs:
       duckdb_version: v1.4.3
       ci_tools_version: v1.4.3
       extension_name: read_rdf
+      vcpkg_commit: 594ad8871e1e8e45f8e626c015fd611163430207
 
   code-quality-check:
     name: Code Quality Check
@@ -36,4 +37,5 @@ jobs:
       duckdb_version: v1.4.3
       ci_tools_version: v1.4.3
       extension_name: read_rdf
-      format_checks: 'format; tidy' 
+      format_checks: 'format; tidy'
+      vcpkg_commit: 594ad8871e1e8e45f8e626c015fd611163430207 
