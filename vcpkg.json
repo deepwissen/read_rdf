@@ -2,7 +2,10 @@
   "name": "read-rdf",
   "version": "1.0",
   "dependencies": [
-    "serd",
+    {
+      "name": "serd",
+      "default-features": false
+    },
     {
       "name": "pkgconf",
       "host": true
@@ -10,12 +13,11 @@
   ],
   "vcpkg-configuration": {
     "overlay-ports": [
-      "./vcpkg_overlay_ports",
       "./extension-ci-tools/vcpkg_ports"
     ],
     "overlay-triplets": [
       "./extension-ci-tools/toolchains"
     ]
   },
-  "builtin-baseline": "ce613c41372b23b1f51333815feb3edd87ef8a8b"
+  "builtin-baseline": "6e874449535f1cc48e9b87a308fbfe8a071d56b0"
 }
