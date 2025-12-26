@@ -58,6 +58,10 @@ private:
 	bool eof = false;
 	bool _strict_parsing = true;
 	uint64_t target_rows;
+
+	// Error handling: store error from C callback, throw later in C++ context
+	bool _has_error = false;
+	std::string _pending_error;
 };
 
 #endif // SERD_BUFFER_H

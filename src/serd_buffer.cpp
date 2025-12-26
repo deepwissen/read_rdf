@@ -100,6 +100,15 @@ void SerdBuffer::PopulateChunk(duckdb::DataChunk &output) {
 	// 2. Parse from file directly into Chunk
 	while (_current_count < STANDARD_VECTOR_SIZE && !eof) {
 		SerdStatus st = serd_reader_read_chunk(_reader.get());
+
+		// Check if ErrorCallBack stored an error (thrown from C callback is UB)
+		if (_has_error) {
+			std::string err = _pending_error;
+			_has_error = false;
+			_pending_error.clear();
+			throw duckdb::SyntaxException(err); // Safe: we're in C++ context now
+		}
+
 		switch (st) {
 		case SERD_SUCCESS:
 			// Loop continues; Callback increments current_count
@@ -120,15 +129,16 @@ void SerdBuffer::PopulateChunk(duckdb::DataChunk &output) {
 		case SERD_ERR_INTERNAL:
 			throw std::runtime_error("SERD Error: " + SerdStatusToString(st));
 		case SERD_ERR_BAD_SYNTAX:
-			if (_strict_parsing)
-				throw duckdb::SyntaxException("SERD bad RDF syntax");
-			else {
-				cerr << "Skipping in parse next batch";
+			// In strict mode, error was already thrown above via _has_error check
+			// In non-strict mode, try to skip the bad line and continue
+			if (!_strict_parsing) {
+				cerr << "Skipping bad syntax in parse";
 				if (serd_reader_skip_until_byte(_reader.get(), '\n') == SERD_FAILURE)
 					throw std::runtime_error("SERD failure while skipping after syntax error");
 			}
+			break;
 		default:
-			throw std::runtime_error("SERD other error");
+			throw std::runtime_error("SERD other error: " + SerdStatusToString(st));
 			break;
 		}
 	}
@@ -204,13 +214,17 @@ SerdStatus SerdBuffer::StatementCallback(void *user_data, SerdStatementFlags, co
 	return SERD_SUCCESS;
 }
 
-// While SERD does provide a skip function for syntax errors (serd_reader_skip_until_byte)
-// it doesn't seem like calling it actually helps.
+// Store error from C callback - don't throw here!
+// Throwing C++ exceptions through C code (serd) is undefined behavior and crashes on Windows.
+// We store the error and throw later when back in C++ context.
 SerdStatus SerdBuffer::ErrorCallBack(void *user_data, const SerdError *error) {
 	auto *self = static_cast<SerdBuffer *>(user_data);
-	if (self->_strict_parsing)
-		throw duckdb::SyntaxException("SERD parsing error '" + SerdStatusToString(error->status) + "', at line " +
-		                              std::to_string(error->line));
+	if (self->_strict_parsing) {
+		self->_has_error = true;
+		self->_pending_error = "SERD parsing error '" + SerdStatusToString(error->status) + "', at line " +
+		                       std::to_string(error->line);
+		return SERD_ERR_BAD_SYNTAX; // Tell serd to stop parsing
+	}
 	return SERD_SUCCESS;
 }
 SerdStatus SerdBuffer::BaseCallback(void *, const SerdNode *) {
