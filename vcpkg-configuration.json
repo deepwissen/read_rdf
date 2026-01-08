@@ -2,7 +2,7 @@
   "default-registry": {
     "kind": "git",
     "repository": "https://github.com/deepwissen/vcpkg.git",
-    "baseline": "578e4e9113"
+    "baseline": "578e4e9113bdf79252bb535555da8ee8b11805c9"
   },
   "overlay-ports": [
     "./extension-ci-tools/vcpkg_ports"
