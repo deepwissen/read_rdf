@@ -32,7 +32,7 @@ jobs:
       exclude_archs: 'linux_amd64;linux_amd64_musl;linux_arm64;osx_amd64;osx_arm64;wasm_mvp;wasm_eh;wasm_threads'
       # Use forked vcpkg with MinGW fixes
       vcpkg_url: 'https://github.com/deepwissen/vcpkg.git'
-      vcpkg_commit: '56e095d8b53e602e86b54ac7e165941b5934618c'
+      vcpkg_commit: '1e9ad595e9885dd9732bb7f16617238117486e3b'
 
   code-quality-check:
     name: Code Quality Check
